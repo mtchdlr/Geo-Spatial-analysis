@@ -1,0 +1,1012 @@
+---
+title: "Davit Mtchedluri GIS"
+author: "Davit Mtchedluri"
+date: "4/26/2020"
+output: 
+  html_document:
+    toc: yes
+    toc_float: True
+    number_sections: True
+  
+  
+---
+
+# task 1
+
+Fist of all I upload libraies in R
+```{r message=FALSE, warning=FALSE}
+library(sf)
+library(ggspatial)
+library(RColorBrewer)
+library(maptools)
+library(spatstat)
+library(classInt)
+library(knitr)
+library(ggthemes)
+library(ggrepel)
+library(tidyverse)
+library(dplyr)
+library(ggplot2)
+library(readxl)
+library(curl)
+library(plotly)
+library(rnaturalearth)
+library(units)
+library(lubridate)
+library(ggspatial)
+library(ggmap)
+library(tmap)
+library(tmaptools)
+library(raster)
+library(rgeos)
+library(rgdal)
+library(sp)
+library(scico)
+library(data.table)
+library(wbstats)
+```
+than set directory, download and unzip all requered files
+```{r}
+setwd("D:/ISET/2019-2020/4/GSA'/homework")
+url="https://data.humdata.org/dataset/3ee95199-2dfe-40fc-b9bd-b44cc8c91024/resource/ac2b2747-18a2-43c9-abbb-4ab2c5c539a3/download/geo_adm_geostat_20191018_shp.zip"
+download.file(url,'url.zip')
+unzip('url.zip')
+list.files(pattern = '.shp')
+
+```
+I did not know which one is which, so i defined all .shp files
+```{r}
+geo_0=st_read('geo_admbnda_adm0_geostat_20191018.shp')
+geo_1=st_read('geo_admbnda_adm1_geostat_20191018.shp')
+geo_2=st_read('geo_admbnda_adm2_geostat_20191018.shp')
+```
+Turns out for most of the time i will use geo_2
+Now I define all datasets
+On the link i could not find dataset which combines them so i downloaded all three
+```{r}
+data0=read.csv('geo_admpop_adm0.csv')
+data1=read.csv('geo_admpop_adm1.csv')
+data2=read.csv('geo_admpop_adm2.csv')
+```
+Overview of the data
+```{r}
+glimpse(data2)
+```
+Now i select necessary variables from populations data and geo layer data
+```{r}
+df2=data2%>%
+  dplyr::select(ADM2_PCODE,POP_Total,M_Total,F_Total)
+
+geo_df2=geo_2%>%
+  dplyr::select(ADM2_EN,ADM2_PCODE)
+
+glimpse(geo_df2)
+glimpse(df2)
+```
+And join them using left join
+```{r}
+almost_full=left_join(geo_df2,df2,'ADM2_PCODE')
+glimpse(almost_full)
+```
+Since in this data does not exist Tbilisi variable, i define new dataset from geo_1 
+by selecting necessary variables and filtering it for Tbilisi
+```{r}
+geo_1_tbilisi=geo_1%>%
+  dplyr::select(ADM1_PCODE,ADM1_EN)%>%
+  dplyr::filter(ADM1_EN=='Tbilisi')
+```
+To make sure every thing is okay so far here is the plot of tbilisi from geo_1_tbilisi
+```{r}
+ggplot()+
+  geom_sf(data = geo_1_tbilisi, fill = "firebrick")
+```
+
+Since it does not contain popualtion inforamtion i use mutate and add variables:
+female population as F_Total, male population as M_Total and total population in tbilisi as POP_Total. Also i rename GEO variable of Tbilisi in order to match my district dataset df2
+```{r}
+geo_1_tbilisi=geo_1_tbilisi%>%
+  mutate(F_Total=634743, M_Total=536357, POP_Total=F_Total+M_Total)%>%
+  rename(ADM2_PCODE=ADM1_PCODE, ADM2_EN=ADM1_EN)
+glimpse(geo_1_tbilisi)
+```
+Now it's time to combine all datasets and add new variable of female population devided by total popualtion
+```{r}
+full=rbind(almost_full, geo_1_tbilisi)
+full=full%>%
+  mutate('F/Total'=F_Total/POP_Total)
+
+glimpse(full)
+```
+
+
+
+It's time to make a plot
+I define plot as THE_PLOT
+```{r}
+breaks=c(0.48,0.49,0.5,0.51,0.52,0.53,0.54,0.55) #for breaks on colour scale
+THE_PLOT=ggplot()+
+  geom_sf(data = geo_0, fill = "palevioletred4", colour = "palevioletred4", size = 0.2)+
+  geom_sf(data = full, aes(fill =full$`F/Total`), colour = "grey60", size= 0.2)+
+  scale_fill_gradientn(colours=c('lightblue3','white','mediumpurple1'),breaks=breaks, labels=c(48,49,50,51,52,53,54,55))+
+  labs(title = 'Gender Balance in Georgia',fill='Percentage of female \nPopulation in the District %',caption = "data source: The Humanitarian Data Exchange\nvisual:Davit Mtchedluri")+
+  annotation_scale(location = "bl", style = "ticks") +
+  annotation_north_arrow(location = "tr", width = unit(0.5, "cm"))
+#and saving plot 
+ggsave("THE_PLOT.png", dpi = 300, height = 4, width = 7, units = "in")
+```
+```{r}
+THE_PLOT
+```
+
+
+On top you see the map of the Republic of Georgia. It describes percentage of female population in the district of the republic. Color scale makes easy to distinguish ditricts with higher percentage of female in district population. The more purple color gets, higher the persentage of female. Dark red areas point on occupied areas. For these regions data is not available.
+
+
+# task 2
+
+
+downloading and defining dataset
+```{r}
+url <- "http://aasa.ut.ee/Rspatial/data/FarmedAnimalsByLocation_31102018.xlsx"
+file <- "FarmedAnimalsByLocation_31102018.xlsx"
+curl_download(url, file)
+da <- read_excel(file)
+```
+
+
+picking necessary variables and replacing space with "_"
+And I decided to visualize sheeps..
+```{r}
+da1=da[,c(1,6,9:12)]
+da1=da1%>%
+  rename(action_place=`action place`,Y=`X koordinaat`,X=`Y koordinaat`)
+```
+
+```{r}
+glimpse(da1)
+```
+
+
+transforming coordinates from character to numeric format
+```{r}
+da1$X=as.numeric(da1$X)
+da1$Y=as.numeric(da1$Y)
+glimpse(da1)
+```
+
+```{r}
+ggplot()+
+  geom_point(data = da1, aes(x= X, y = Y))
+```
+
+
+
+download and unzip geo layer files
+```{r}
+download.file("https://geoportaal.maaamet.ee/docs/haldus_asustus/omavalitsus_shp.zip", destfile="omavalitsus_shp.zip")
+unzip("omavalitsus_shp.zip")
+```
+
+chack .shp files and import it
+```{r}
+list.files(pattern = '.shp')
+est_mun=st_read("omavalitsus_20200401.shp")
+```
+
+```{r}
+glimpse(est_mun)
+```
+
+adding CRS to est_mun
+```{r}
+st_crs(est_mun)<-3301
+```
+
+```{r}
+glimpse(est_mun)
+```
+
+sheep farms in Estonia
+```{r}
+ggplot()+
+  geom_sf(data = est_mun, colour = "grey40", fill = "grey80", size=0.1)+ 
+  geom_point(data = da1, aes(x=X, y=Y, size=sheeps))
+```
+
+
+```{r}
+glimpse(est_mun)
+```
+
+```{r}
+glimpse(da1)
+```
+
+```{r}
+est_mun=est_mun%>%
+  mutate(mun=str_to_lower(ONIMI))
+da1=da1%>%
+  mutate(mun=str_to_lower(municipality))
+
+```
+
+```{r}
+new=est_mun%>%
+  dplyr::select(mun,OKOOD)
+glimpse(new)
+```
+
+```{r}
+new$geometry=NULL
+glimpse(new)
+```
+
+```{r}
+da_grouped=da1%>%
+  group_by(mun)%>%
+  summarise(sheep=sum(sheeps))%>%
+  ungroup()
+```
+
+```{r}
+glimpse(da_grouped)
+```
+
+```{r}
+da_joined=inner_join(da_grouped,new, by='mun')
+glimpse(da_joined)
+```
+
+```{r}
+da2=left_join(est_mun,da_joined, by='mun')
+da2=da2%>%
+  filter(!is.na(sheep))
+glimpse(da2)
+```
+
+
+```{r}
+ggplot()+
+  geom_sf(data = da2, aes(fill = sheep))+
+  scale_fill_gradientn(colours = topo.colors(20), na.value = "black")
+```
+Previous map show white spaces so i continue
+Transforming sheep data to layer file 
+```{r}
+da1_sf=st_as_sf(da1, coords = c("X", "Y"), crs = 3301)
+glimpse(da1_sf)
+```
+
+Plot of new file combined with layer file
+```{r}
+ggplot()+
+  geom_sf(data = est_mun)+
+  geom_sf(data = da1_sf, aes(col=sheeps))
+```
+
+```{r}
+da1_sf_est_mun=st_join(da1_sf, est_mun, join = st_intersects)
+glimpse(da1_sf_est_mun)
+```
+
+```{r}
+st_geometry(da1_sf_est_mun)=NULL
+
+da3=da1_sf_est_mun%>% 
+  group_by(OKOOD) %>% 
+  summarise(sheep = sum(sheeps)) %>% 
+  ungroup()
+glimpse(da3)
+```
+
+
+```{r}
+da4=left_join(est_mun, da3, by="OKOOD")
+glimpse(da4)
+```
+
+ploting number of sheeps in municipality
+```{r}
+g=ggplot()+
+  geom_sf(data = da4, aes(fill=sheep), size=0.25, colour = "grey70")+
+  scale_fill_gradientn(colours = c('darkgreen','skyblue1',"gold1", "goldenrod1", 'orangered1',"indianred2", "mediumslateblue", "midnightblue"), na.value = "magenta")+
+  labs(fill = "N", 
+       title = "Sheeps in Estonian municipalities",
+       subtitle = "Agricultural Registers and Information Board",
+       caption = "author: Davit Mtchedluri")+
+  annotation_scale(location = "bl", style = "ticks")+
+  annotation_north_arrow(location = "tr", width = unit(0.5, "cm"))
+```
+plot
+```{r}
+g
+```
+
+plot
+```{r}
+N1=ggplotly(g)
+```
+intereactive plot
+```{r}
+N1
+```
+
+
+
+adding area
+```{r}
+da4$area=st_area(da4)
+da4=da4%>%
+  mutate(area=as.numeric(area)/1000000)
+
+```
+ploting sheep density plot
+```{r}
+g2=ggplot()+
+  geom_sf(data = da4, aes(fill = sheep / area), size=0.25, colour = "grey70")+
+  scale_fill_gradientn(colours = c('darkgreen','skyblue1',"gold1", "goldenrod1", 'orangered1',"indianred2", "mediumslateblue", "midnightblue"), na.value = "magenta")+
+  labs(fill = "N per km2", 
+       title = "Sheep density in Estonian municipalities",
+       subtitle = "Agricultural Registers and Information Board",
+       caption = "author: Davit Mtchedluri")+
+  annotation_scale(location = "bl", style = "ticks")+
+  annotation_north_arrow(location = "tr", width = unit(0.5, "cm"))
+```
+plot
+```{r}
+g2
+```
+
+```{r}
+N2=ggplotly(g2)
+```
+interactive plot
+```{r}
+N2
+```
+
+
+# task 3
+
+
+Adding area
+```{r}
+full$area=st_area(full)
+full$area[1:3]
+```
+
+transforming area unit to km^2
+```{r}
+full$area=set_units(full$area,km^2)
+full$area[1:3]
+```
+
+```{r}
+glimpse(full)
+```
+
+```{r}
+full=full%>%
+  mutate(density=POP_Total/area)
+```
+
+```{r}
+glimpse(full)
+```
+
+creating classes for density
+```{r}
+full$density=as.numeric(full$density)
+classes=classIntervals(full$density,n=12, dig.lab=20)
+classes
+classes$brks=round(classes$brks)
+```
+
+```{r}
+glimpse(full)
+```
+
+
+```{r}
+full <- full %>%
+  mutate(percent_class =cut(density, classes$brks, include.lowest = T, dig.lab=10))
+
+names(which(sapply(full, anyNA)))
+full=full%>%
+  filter(!is.na(percent_class))
+```
+
+```{r}
+ggplot()+
+  theme_minimal()+
+  theme(axis.title = element_blank(),
+        axis.ticks = element_blank(),
+        panel.background = element_rect(fill = "slategray4"),
+        panel.grid = element_line(colour = "grey40", size= 0.2),
+        plot.background = element_rect(fill = "slategray4"))+
+  geom_sf(data = geo_0, fill = "grey40", colour = "grey60", size = 0.2)+
+  geom_sf(data = full, aes(fill = percent_class), colour = "grey60", size= 0.2)+
+  scale_fill_viridis_d(na.value = "magenta")+
+  labs(title = "Population density in the municipalities of Georgia",
+       fill  = "Persons per km^2",
+       caption = "Author: Davit Mtchedluri")+
+  annotation_scale(location = "bl", style = "ticks") +
+  annotation_north_arrow(location = "tr", width = unit(0.5, "cm"))
+```
+
+
+Corona Recovery
+```{r}
+corona <- read_csv("https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_recovered_global.csv")
+```
+```{r}
+glimpse(corona)
+```
+
+
+```{r}
+corona_long=gather(corona,"key","value",5:ncol(corona))
+glimpse(corona_long)
+```
+
+
+
+```{r}
+corona_long=corona_long%>% 
+  rename(Country_Region = `Country/Region`,
+         Province_State = `Province/State`) %>% 
+  mutate(date = mdy(key),
+         place = paste0(Country_Region, ", ", Province_State))
+```
+
+
+leaving only country
+```{r}
+corona_long=corona_long %>% 
+  mutate(place = str_replace(place, ", NA", ""))
+```
+
+```{r}
+glimpse(corona_long)
+```
+
+```{r}
+corona_long_sf=st_as_sf(corona_long, coords = c("Long", "Lat"), crs = 4326)
+```
+```{r}
+corona_sf_recovery=corona_long_sf%>% 
+  filter(date==max(date) | date==max(date)-days(30))
+```
+
+```{r}
+corona_sf_recovery1=st_coordinates(corona_sf_recovery) %>% 
+  as_tibble()
+
+corona_sf_recovery2=bind_cols(corona_sf_recovery, corona_sf_recovery1)
+
+corona_sf_recovery2=corona_sf_recovery2%>% 
+  filter(X != 0) %>% 
+  filter(Y != 0)
+
+glimpse(corona_sf_recovery2)
+```
+
+
+
+```{r}
+corona_sf_recovery_3=corona_sf_recovery2%>% 
+  dplyr::select(place, X, Y, value, date) %>% 
+  st_drop_geometry() %>% 
+  spread(date, value)
+```
+
+```{r}
+dates=colnames(corona_sf_recovery_3)[4:5]
+glimpse(dates)
+
+colnames(corona_sf_recovery_3)[4:5]=c("a", "b")
+```
+
+```{r}
+corona_sf_recovery_3$a[is.na(corona_sf_recovery_3$a)]=0
+corona_sf_recovery_3$b[is.na(corona_sf_recovery_3$b)]=0
+
+```
+
+Change in Recovery
+```{r}
+corona_sf_recovery_3=corona_sf_recovery_3%>%
+  mutate(change = b - a)
+```
+```{r}
+glimpse(corona_sf_recovery_3)
+```
+
+
+```{r}
+countries50 <- ne_download(scale = 50, type = 'countries', category = 'cultural', returnclass = "sf")
+```
+
+
+```{r}
+corona_sf_recovery_3
+```
+Check for NAs
+```{r}
+names(which(sapply(corona_sf_recovery_3, anyNA)))
+```
+
+I replace nagtive values with 0, that means in the period there was no change in the number of recovery
+```{r}
+corona_sf_recovery_3$change[corona_sf_recovery_3$change<0]=0
+```
+
+
+
+```{r message=FALSE, warning=FALSE}
+ggplot()+
+  theme_tufte()+
+  theme(axis.title = element_blank(),
+        axis.ticks = element_blank())+
+  geom_sf(data = countries50, colour = "grey", fill= "grey90", size=0.2)+
+  geom_point(data = corona_sf_recovery_3, aes(x = X,
+                                               y = Y,
+                                               size = change,
+                                              colour = change, 
+                                           alpha= change))+
+  scale_alpha(range = c(0.3, 0.7))+
+  scale_colour_gradientn(trans = "log10", colours= c("black", "red4", "red", "orangered", "gold1","darkseagreen2",'forestgreen'))+
+  scale_size_continuous(trans = "log10", range = c(1, 5))+
+  labs(size= "change", alpha = "change", colour = "change",
+       title = "Change in COVID-19 recovery",
+       subtitle = paste0("period: ", dates[1], "...", dates[2]))+
+  guides(alpha = F,
+         size= F)
+
+```
+
+
+
+Top 10
+```{r}
+corona_sf_recovery_3_top10=corona_sf_recovery_3%>% 
+  arrange(desc(change)) %>% 
+  head(n = 10)
+```
+```{r}
+ggplot()+
+  geom_sf(data = countries50, fill = "white", colour = "grey", size=0.2)+
+  geom_point(data=corona_sf_recovery_3_top10,aes(x=X,y=Y,size=change,alpha=change),colour="red")+
+  scale_size_continuous(trans = "log", range = c(1, 5))+
+  scale_alpha(range = c(0.4, 0.8))+
+  labs(size= "difference", alpha = "difference", colour = "difference", title = "Top 10 Change in COVID-19 recovery")
+```
+
+
+```{r}
+ggplot()+
+  theme_minimal()+
+  theme(panel.background = element_rect(fill = "slategray1"))+
+  geom_segment(data=corona_sf_recovery_3_top10,aes(x=0,xend=change,y=reorder(place,change),
+                                                   yend=reorder(place, change)),colour = "black")+
+  geom_point(data=corona_sf_recovery_3_top10, aes(x = change, y = reorder(place, change)),
+             shape=21,colour="white",fill ="firebrick",size=3)+
+  labs(title = "Change in Coronavirus recovery for past month", 
+       x = "Change",
+       y = "Country")
+
+```
+
+
+
+# task 4
+
+
+
+Download and unzip files for Georgia
+```{r}
+download.file("http://aasa.ut.ee/tbilisi/osm_georgia_selected.zip", destfile="osm_georgia_selected.zip")
+unzip("osm_georgia_selected.zip")
+```
+
+```{r}
+list.files(pattern = ".shp")
+```
+
+
+```{r}
+roads=st_read('gis_osm_roads_free_1.shp')
+waters=st_read("gis_osm_waterways_free_1.shp")
+```
+
+Roads
+```{r}
+unique(roads$fclass)
+```
+
+```{r}
+roads123=roads%>%
+  filter(fclass=="primary"|fclass=="secondary"|fclass=="tertiary")
+```
+
+Rivers
+```{r}
+unique(waters$fclass)
+```
+
+```{r}
+rivers=waters%>%
+  filter(fclass=='river')
+```
+
+
+```{r}
+geo_0=getData("GADM",country="GE", level=0)
+
+geo_0_sf=st_as_sf(geo_0)
+```
+
+```{r}
+glimpse(geo_0_sf)
+```
+
+```{r}
+ggplot()+
+  geom_sf(data = geo_0_sf, col = "red")+
+  geom_sf(data = rivers, col = "blue", size= 0.25)
+```
+
+Rivers look ugly,so..
+```{r message=FALSE}
+rivers=st_intersection(rivers, geo_0_sf)
+```
+
+```{r}
+ggplot()+
+  geom_sf(data = geo_0_sf, col = "red")+
+  geom_sf(data = rivers, col = "blue", size= 0.25)
+```
+
+```{r}
+ggplot()+
+  geom_sf(data = geo_0_sf, col = "red")+
+  geom_sf(data = roads123, col = "red", size= 0.25)
+```
+That road map also looks ugly
+
+
+```{r }
+new_roads=ne_download(scale = "large", type = "roads", category = "cultural")
+
+ne_roads=gIntersection(new_roads, geo_0, byid = TRUE, drop_lower_td = TRUE)
+```
+
+pretty
+```{r}
+plot(geo_0)
+plot(ne_roads, add= T, col = "red")
+
+```
+
+```{r}
+ne_roads_sf=st_as_sf(ne_roads)
+
+ggplot()+
+  geom_sf(data = geo_0_sf, col = "grey40")+
+  geom_sf(data = ne_roads_sf, col = "red", size= 0.25)
+```
+
+
+Getting population
+```{r}
+ne_pop=ne_download(scale = "large", type = "populated_places", category = "cultural")
+```
+
+```{r}
+ne_pop_sf=st_as_sf(ne_pop)
+ne_pop_ge=ne_pop$ISO_A2=="GE"
+```
+
+```{r}
+ne_GE_pop_sf=ne_pop_sf%>%
+  filter(ISO_A2 =="GE")
+```
+
+
+```{r}
+ggplot()+
+  geom_sf(data = geo_0_sf)+
+  geom_sf(data =ne_GE_pop_sf, col = "red")+
+  geom_sf_text(data = ne_GE_pop_sf, aes(label = NAME), nudge_y = 0.1, nudge_x = 0.25)+
+  geom_sf(data = ne_roads_sf, col = "red", size= 0.25)+
+  geom_sf(data = rivers, col = "blue", size= 0.25)
+```
+
+
+```{r}
+precip=getData('worldclim',var='bio',res=0.5, lon = 44, lat = 42)
+```
+
+According  to "https://cmerow.github.io/RDataScience/05_Raster.html#3_raster_package" annual precipitation is under code: "bio12"
+
+```{r}
+glimpse(precip)
+```
+
+```{r}
+names(precip)
+```
+
+```{r}
+precid_annual=precip$bio12_17
+```
+
+```{r}
+glimpse(precid_annual)
+```
+
+```{r}
+class(precid_annual)
+```
+
+```{r}
+plot(precid_annual)
+plot(geo_0,add=T)
+```
+
+
+```{r}
+precid_annual_geo=mask(precid_annual, geo_0)
+```
+
+```{r warning=FALSE}
+
+plot(geo_0,col = "red")
+plot(precid_annual_geo, add=T,col = rainbow(17))
+plot(ne_roads_sf, add=T, col = "black")
+plot(rivers,add=T,col='steelblue1')
+plot(ne_GE_pop_sf, add=T,col="red")
+pointLabel(st_coordinates(ne_GE_pop_sf),labels = ne_GE_pop_sf$NAME)
+
+```
+
+Next graph
+
+```{r}
+geo_1=getData('GADM', country ='GEO', level = 1)
+glimpse(geo_1)
+```
+```{r}
+names(geo_1)
+```
+
+
+```{r}
+ave_regon_prec=extract(precid_annual_geo,geo_1, fun = mean, na.rm=TRUE, sp = T)
+
+ave_regon_prec@data %>% 
+  head(10)
+```
+
+```{r}
+ave_region_prec_sf=st_as_sf(ave_regon_prec)
+```
+
+```{r warning=FALSE}
+ggplot()+
+  geom_sf(data=ave_region_prec_sf, aes(fill=bio12_17), col = "grey", size= 0.25)+
+  geom_sf_label(data =ave_region_prec_sf, aes(label= round(bio12_17, 0)), alpha = 0.5)+
+  scale_fill_gradient2(low = "gold1", mid="palegreen", high = "deepskyblue4", midpoint = 400)+
+  labs(title = "Average precipitation in region (mm)", fill = "mm")
+```
+
+
+
+# task 5
+
+
+```{r}
+url="http://aasa.ut.ee/Rspatial/data/usa_GPS.zip"
+download.file(url, "usa_GPS.zip")
+unzip("usa_GPS.zip")
+file.remove("usa_GPS.zip")
+```
+
+```{r}
+list.files(pattern = ".csv")
+```
+
+```{r}
+gps=read.csv2("gps_us.csv")
+```
+
+```{r}
+gps=gps%>% 
+  dplyr::select(time_system_ts, accuracy, altitude, bearing, speed, X, Y)
+gps=gps%>% 
+  mutate(time_system_ts = ymd_hms(time_system_ts))
+gps=gps%>% 
+  mutate(time_system_ts = time_system_ts - hours(10))
+```
+```{r}
+glimpse(gps)
+```
+
+```{r}
+#grepl for filtering time by pattern=2018-04-27
+gps_dt=gps%>%
+  filter(grepl("2018-04-27",time_system_ts))
+```
+```{r}
+glimpse(gps_dt)
+```
+
+
+```{r}
+ggplot()+
+  geom_point(data=gps_dt, aes(x=time_system_ts, y=altitude), size=0.25, col="red")
+```
+
+```{r}
+ggplot()+
+  geom_point(data = gps_dt, aes(y = Y, x = X))
+```
+
+Frame for map
+```{r}
+box=c(left = min(gps_dt$X)-1, bottom = min(gps_dt$Y)-1, right = max(gps_dt$X)+1, top = max(gps_dt$Y)+1)
+```
+
+```{r}
+box
+```
+
+
+```{r}
+the_map=get_stamenmap(box, maptype=c("terrain",
+  "terrain-background", "terrain-labels", "terrain-lines", "toner",
+  "toner-2010", "toner-2011", "toner-background", "toner-hybrid",
+  "toner-labels", "toner-lines", "toner-lite", "watercolor"), zoom = 9)
+```
+
+```{r}
+ggmap(the_map)+
+  theme_map()+
+  geom_point(data = gps_dt, aes(y = Y, x=X), colour ="red", size=0.5, alpha=0.5)
+```
+
+Adding few marks on the map
+With previously filtered data creating starting and ending point was challenging
+So went on another way
+
+```{r}
+gps$time_system_ts=as.POSIXct(gps$time_system_ts,format="%Y-%m-%d %H:%M:%OS")
+view(gps)
+gps3t=gps%>%
+  filter(grepl("2018-04-27",time_system_ts))
+
+start_end=gps3t[c(1,15822),]
+start_end
+```
+
+```{r}
+ggmap(the_map)+
+  theme_map()+
+  geom_point(data = gps_dt, aes(y = Y, x=X), colour ="red", size=0.5, alpha=0.5)+
+  geom_point(start_end, mapping=aes(x=X, y=Y,color=factor(time_system_ts)),size=4)+
+  geom_label(data=start_end, aes(y = Y - 0.2, x=X, colour =factor(time_system_ts), label= factor(time_system_ts)), size=2.5, alpha=0.5)+
+  scale_color_manual(values = c("2018-04-27 00:09:31" = "forestgreen", "2018-04-27 23:55:42" = "red"))+
+  guides(colour = F)
+```
+
+# task 6
+
+
+
+
+```{r}
+rest=read_xlsx("tripadvisor (1).xlsx")
+```
+```{r}
+glimpse(rest)
+```
+
+
+```{r}
+tmap_mode("view")
+```
+
+```{r}
+dim(rest)
+```
+
+
+```{r}
+rest_no_coor=rest%>%
+  dplyr::filter(lon!="NA",lat!="NA")
+```
+
+
+```{r}
+dim(rest_no_coor)
+```
+
+
+```{r}
+rest_no_coor_sf=st_as_sf(rest_no_coor, coords = c("lon","lat"),crs=4326)
+
+```
+
+```{r message=FALSE}
+tm_shape(rest_no_coor_sf)+
+  tm_dots(size = "reviews", col = "red", alpha = 0.5, scale = 1, border.col="black")
+```
+
+
+# task 7
+
+
+As you mentioned, i did the same thing to find an indicator
+```{r}
+#indicators=wb_cachelist$indicators
+#write.csv(indicators, file = "indicators.csv")
+```
+
+I picked military expenditure as % of GDP
+```{r}
+m_exp=wb(indicator = 'MS.MIL.XPND.GD.ZS', mrv = 1, return_wide = TRUE)
+```
+
+
+```{r}
+glimpse(m_exp)
+```
+
+
+downloading country data
+```{r}
+countriessss=ne_download(scale = 50, type = 'countries', category = 'cultural', returnclass = "sf")
+glimpse(countriessss)
+```
+
+
+getting necessary data from countriessss
+```{r}
+countries1=countriessss%>% 
+  dplyr::select(ADM0_A3, NAME)
+glimpse(countries1)
+```
+
+joining countries' and military expenditure data
+```{r}
+gdp_en_count=left_join(countries1, m_exp, by = c("ADM0_A3" = "iso3c"))
+glimpse(gdp_en_count)
+```
+
+I used these commands tu pick pallete
+```{r}
+#library(shinyjs)
+#palette_explorer()
+```
+
+The map
+```{r}
+tm_shape(gdp_en_count)+
+  tm_polygons(col = "MS.MIL.XPND.GD.ZS",
+              n=10,
+              palette="-plasma",
+              border.col = "grey40",
+              lwd = 0.2,
+              title = "GDP % of Military Expanditure",
+              colorNA  = "dodgerblue",
+              legend.hist=T)+
+  tm_style("classic")+
+  tm_layout(main.title = "Military Expanditure(% of GDP)",
+            legend.bg.color = "white",
+            legend.bg.alpha = 0.7,
+            legend.outside = T)+
+  tm_credits("data: World Bank; map: Davit Mtchedluri",
+             bg.color = "white",
+             bg.alpha = 0.7)
+```
+
